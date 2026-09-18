@@ -1,11 +1,13 @@
-"""Step 6: 混合检索（hybrid retrieval）
+"""Step 6: Hybrid retrieval
 
-向量检索懂语义但对精确词不敏感，BM25 关键词检索精确但不懂语义。
-混合检索 = 两边各取 top_k，取并集去重，再用 RRF 融合排序。
+Vector search understands semantics but is insensitive to exact terms; BM25
+keyword search is precise but understands no semantics.
+Hybrid retrieval = take top_k from each side, union + dedupe, then fuse
+rankings with RRF.
 
-RRF（Reciprocal Rank Fusion）：score = Σ 1 / (k + 排名)
-- 只看排名不看原始分数，所以向量距离和 BM25 分数两种不同量纲可以直接融合
-- 两边都命中的 chunk 得分叠加，自然排到前面
+RRF (Reciprocal Rank Fusion): score = Σ 1 / (k + rank)
+- Uses only ranks, not raw scores, so vector distances and BM25 scores (different scales) fuse directly
+- Chunks hit by both sides accumulate score and naturally float to the top
 """
 import chromadb
 import jieba
@@ -14,14 +16,14 @@ from retrieve import retrieve as vector_retrieve
 
 
 def _tokenize(text):
-    # 中文必须先分词，BM25 才能按"词"统计词频
+    # Segment text first so BM25 can count term frequencies
     return list(jieba.cut(text))
 
 
 def _load_corpus(persist_dir="./chroma_db"):
     col = chromadb.PersistentClient(path=persist_dir).get_collection("rag_docs")
     data = col.get()
-    # 按 chunk-id 排序，保证顺序稳定
+    # Sort by chunk-id for a stable order
     return sorted(
         zip(data["ids"], data["documents"], data["metadatas"]),
         key=lambda x: int(x[0].split("-")[1]),
@@ -29,7 +31,7 @@ def _load_corpus(persist_dir="./chroma_db"):
 
 
 def bm25_retrieve(query, top_k=3, persist_dir="./chroma_db"):
-    """纯 BM25 关键词检索，返回 (chunk id, 文档, 元数据, BM25 分数)，分数越大越相关"""
+    """Pure BM25 keyword search; returns (chunk id, document, metadata, BM25 score) — higher score means more relevant"""
     items = _load_corpus(persist_dir)
     bm25 = BM25Okapi([_tokenize(doc) for _, doc, _ in items])
     scores = bm25.get_scores(_tokenize(query))
@@ -38,7 +40,7 @@ def bm25_retrieve(query, top_k=3, persist_dir="./chroma_db"):
 
 
 def hybrid_retrieve(query, top_k=3, persist_dir="./chroma_db", rrf_k=60):
-    """混合检索：向量 top_k ∪ BM25 top_k，RRF 融合后取前 top_k"""
+    """Hybrid search: vector top_k ∪ BM25 top_k, fused with RRF, keep top_k"""
     vec_hits = vector_retrieve(query, top_k=top_k, persist_dir=persist_dir)
     bm25_hits = bm25_retrieve(query, top_k=top_k, persist_dir=persist_dir)
     fused = {}  # cid -> [doc, meta, rrf_score]
@@ -54,4 +56,4 @@ def hybrid_retrieve(query, top_k=3, persist_dir="./chroma_db", rrf_k=60):
 
 if __name__ == "__main__":
     for cid, doc, meta, score in hybrid_retrieve("ANN"):
-        print(f"[{cid}｜{meta['source']}] RRF={score:.4f}\n{doc[:80]}…\n")
+        print(f"[{cid} | {meta['source']}] RRF={score:.4f}\n{doc[:80]}…\n")

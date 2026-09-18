@@ -1,6 +1,6 @@
-"""一键建索引：读 docs/ -> 切块 -> 向量化 -> 入库
+"""Build the index in one command: read docs/ -> chunk -> embed -> store
 
-运行：python scripts/build_index.py
+Run: python scripts/build_index.py
 """
 import os
 import sys
@@ -17,6 +17,6 @@ for f in sorted(docs_dir.glob("*.md")):
         chunks.append(c)
         metas.append({"source": f.name})
 
-print(f"共切出 {len(chunks)} 个 chunk")
+print(f"Split into {len(chunks)} chunks")
 build_collection(chunks, metas)
-print("索引构建完成 ✅")
+print("Index built ✅")

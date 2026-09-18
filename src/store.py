@@ -1,11 +1,11 @@
-"""Step 3: 向量化（embedding）+ 存入向量数据库
+"""Step 3: Embedding + storing in the vector database
 
-流程：chunk -> embedding 模型 -> 向量 -> Chroma 持久化存储
+Flow: chunk -> embedding model -> vector -> persisted in Chroma
 """
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-# 中文小模型，~100MB，第一次运行时自动下载
+# Compact embedding model, ~100MB, auto-downloaded on first run
 MODEL_NAME = "BAAI/bge-small-zh-v1.5"
 
 
@@ -16,7 +16,7 @@ def get_model():
 def build_collection(chunks, metadatas, persist_dir="./chroma_db"):
     client = chromadb.PersistentClient(path=persist_dir)
     model = get_model()
-    print("正在把 chunk 转成向量…")
+    print("Encoding chunks into vectors…")
     embeddings = model.encode(chunks, show_progress_bar=True, normalize_embeddings=True)
     col = client.get_or_create_collection("rag_docs", metadata={"hnsw:space": "cosine"})
     col.add(
@@ -25,5 +25,5 @@ def build_collection(chunks, metadatas, persist_dir="./chroma_db"):
         embeddings=embeddings.tolist(),
         metadatas=metadatas,
     )
-    print(f"已存入 {len(chunks)} 个 chunk -> {persist_dir}")
+    print(f"Stored {len(chunks)} chunks -> {persist_dir}")
     return col

@@ -1,15 +1,15 @@
-"""Step 2: 文本切块（chunking）
+"""Step 2: Chunking text
 
-为什么切块？
-- 向量模型一次能处理的文本长度有限
-- 检索时我们想要的是"最相关的段落"，而不是整篇文档
-- 块太大 -> 噪声多；块太小 -> 语义不完整。400~800 字是常见起点。
+Why chunk?
+- Embedding models can only handle limited text length at once
+- At retrieval time we want "the most relevant passages", not whole documents
+- Chunks too big -> noisy; chunks too small -> incomplete meaning. 400-800 chars is a common starting point.
 """
 import re
 
 
 def chunk_text(text: str, chunk_size: int = 400, overlap: int = 60):
-    """先按段落切，再把段落拼成固定大小的块，块之间保留一点重叠。"""
+    """Split by paragraph first, then pack paragraphs into fixed-size chunks with a little overlap between them."""
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     chunks, current = [], ""
     for para in paragraphs:
@@ -18,7 +18,7 @@ def chunk_text(text: str, chunk_size: int = 400, overlap: int = 60):
         else:
             if current:
                 chunks.append(current)
-            # 单个段落超长时硬切，并保留 overlap 避免语义断裂
+            # If a single paragraph exceeds chunk_size, hard-split it, keeping overlap to avoid breaking meaning mid-thought
             while len(para) > chunk_size:
                 chunks.append(para[:chunk_size])
                 para = para[chunk_size - overlap:]
@@ -29,6 +29,6 @@ def chunk_text(text: str, chunk_size: int = 400, overlap: int = 60):
 
 
 if __name__ == "__main__":
-    demo = "第一段。" * 100 + "\n\n" + "第二段。" * 100
+    demo = "Paragraph one. " * 100 + "\n\n" + "Paragraph two. " * 100
     for i, c in enumerate(chunk_text(demo)):
-        print(f"--- chunk {i}（{len(c)} 字）---\n{c[:60]}…\n")
+        print(f"--- chunk {i} ({len(c)} chars) ---\n{c[:60]}…\n")

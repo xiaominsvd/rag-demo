@@ -1,24 +1,25 @@
-"""Step 5: 增强生成（generation）
+"""Step 5: Augmented generation
 
-把检索到的资料拼进 prompt，再交给 LLM 生成答案。
-没有 OPENAI_API_KEY 时降级为"抽取式"：直接展示最相关的资料。
+Stuff the retrieved sources into the prompt and let the LLM generate an answer.
+Without OPENAI_API_KEY, falls back to "extractive" mode: just show the most
+relevant sources directly.
 """
 import os
 
-PROMPT_TEMPLATE = """你是一个知识库问答助手。请只根据下面提供的参考资料回答问题。
-如果资料中没有答案，请直接说"资料中没有相关信息"，不要编造。
+PROMPT_TEMPLATE = """You are a knowledge-base Q&A assistant. Answer the question using ONLY the reference material provided below.
+If the material contains no answer, say "No relevant information in the sources." Do not fabricate.
 
-参考资料：
+Reference material:
 {context}
 
-问题：{question}
+Question: {question}
 
-回答："""
+Answer:"""
 
 
 def build_prompt(question, retrieved):
     context = "\n\n---\n\n".join(
-        f"[资料{i + 1}｜来源：{m.get('source', '?')}]\n{d}"
+        f"[Source {i + 1} | file: {m.get('source', '?')}]\n{d}"
         for i, (d, m, _) in enumerate(retrieved)
     )
     return PROMPT_TEMPLATE.format(context=context, question=question)
