@@ -292,3 +292,48 @@ Two method-level findings that survived ALL chunk sizes:
 (Note: after the experiments, build_index.py was reverted to the
 default chunk_size=400 and the index rebuilt, so the repo default is
 unchanged. Say the word to make 800 the default.)
+
+
+================================================================
+Part 5: chunk_size=1600 experiment (3 chunks -- the degenerate limit)
+================================================================
+Change: scripts/build_index.py -> chunk_text(..., chunk_size=1600).
+Effect: 3 chunks, exactly one per document (1154 / 1140 / 1178 chars).
+At this size "retrieval" stops being retrieval.
+
+compare.py results -- note: EVERY method's top-3 is now ALL 3 chunks,
+i.e. the entire corpus. Only the ORDERING differs; the LLM would see
+identical content no matter which method "wins":
+
+Query "ANN":
+  vector: chunk-2 (0.571), chunk-0 (0.579), chunk-1 (0.585)
+  BM25:   chunk-1 (0.521), chunk-0 (0.000), chunk-2 (0.000)
+  hybrid: chunk-2 (0.032), chunk-1 (0.032), chunk-0 (0.032)
+          -- a perfect three-way tie: each chunk is #1 in one method
+             and #3 in the other (or #2 in both). 1/61+1/63 = 2/62 to
+             three decimals. RRF cannot distinguish them at all.
+
+Query "Which vector database should I pick for a prototype?":
+  vector: chunk-1 (0.228), chunk-2 (0.377), chunk-0 (0.392)
+  BM25:   chunk-1 (1.205), chunk-0 (1.145), chunk-2 (1.125)
+          -- BM25 scores collapse: longer docs get heavier length
+             normalization (compare 2.346 for "ANN" at size 400).
+  hybrid: chunk-1 (0.033), chunk-2 (0.032), chunk-0 (0.032)
+
+Query "What's the difference between RAG and fine-tuning?":
+  vector: chunk-0 (0.335), chunk-2 (0.394), chunk-1 (0.506)
+  BM25:   chunk-2 (2.538), chunk-0 (1.212), chunk-1 (1.095)
+  hybrid: chunk-0 (0.033), chunk-2 (0.033), chunk-1 (0.032)
+          -- chunk-0 and chunk-2 tie exactly (1/61+1/62 both ways);
+             near-tie again, broken only by insertion order.
+
+Takeaway: 1600 proves the degenerate limit. When chunk_size >= corpus
+size, the method comparison is theater -- vector, BM25 and hybrid all
+hand the LLM the same three documents in a slightly different order.
+The honest conclusion: on a corpus this small you don't need RAG at
+all; just stuff all three docs into the prompt. RAG earns its keep
+only when the corpus does NOT fit in the context window -- which is
+exactly when chunking granularity starts to matter (see Parts 3-4).
+
+(Note: build_index.py reverted to the default chunk_size=400 and the
+index rebuilt afterwards; the repo default is unchanged.)
