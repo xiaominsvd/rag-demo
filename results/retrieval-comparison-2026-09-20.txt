@@ -111,3 +111,37 @@ Verdict: header-aware chunking is a strict improvement in chunk quality
 (no fragments, no header/body splits, self-describing chunks, cleaner
 vector results) but it does NOT by itself solve vocabulary mismatch.
 Kept as the default in build_index.py.
+
+
+================================================================
+Part 7: cross-encoder reranking (BAAI/bge-reranker-v2-m3)
+================================================================
+New file src/rerank.py: hybrid fetches top-10, cross-encoder scores
+each (query, chunk) pair, keep top-3. Model downloaded once (~2.2GB
+in HF cache), reused afterwards.
+
+Query "Which vector database should I pick for a prototype?":
+  reranked: chunk-7 (0.998), chunk-8 (0.995), chunk-2 (0.995)
+  WIN: chunk-8 ("Selection Advice" + "Under 1M vectors...") -- the
+  chunk NO retrieval method could find -- is now #2. The cross-encoder
+  actually read the pair and bridged the vocabulary gap ("prototype"
+  vs "single machine"). This is the fix Part 6 said lived outside the
+  splitter.
+
+Query "ANN":
+  reranked: chunk-9 (0.732), chunk-0 (0.719), chunk-4 (0.695)
+  MISS: the correct chunk-4 is #3; the 15-char empty header chunk-9
+  ("Optimizing RAG") is #1. Scores cluster tightly (0.69-0.73) -- the
+  model is uncertain on a 3-character query and does NOT fix hybrid's
+  lukewarm-middle pathology here. Prediction falsified.
+
+Query "What's the difference between RAG and fine-tuning?":
+  reranked: chunk-13 (0.994), chunk-4 (0.994), chunk-0 (0.993)
+  Correct chunk #1, but every candidate scores ~0.99 -- no real
+  discrimination on this tiny corpus.
+
+Verdict: reranking is not a universal upgrade. It shines exactly where
+retrieval is vocabulary-blind (prototype -> chunk-8) and adds nothing
+-- or noise -- where the query is too short for the model to bite
+("ANN") or the corpus too small to discriminate. Two-stage pipelines
+earn their keep on real-sized corpora, not 14 chunks.
