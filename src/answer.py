@@ -20,7 +20,7 @@ Answer:"""
 def build_prompt(question, retrieved):
     context = "\n\n---\n\n".join(
         f"[Source {i + 1} | file: {m.get('source', '?')}]\n{d}"
-        for i, (d, m, _) in enumerate(retrieved)
+        for i, (cid, d, m, _) in enumerate(retrieved)
     )
     return PROMPT_TEMPLATE.format(context=context, question=question)
 

@@ -23,4 +23,4 @@ if answer:
     print("💡 Answer:\n" + answer)
 else:
     print("⚠️ OPENAI_API_KEY not detected, falling back to extractive answer (showing the most relevant source):\n")
-    print(hits[0][0])
+    print(hits[0][1])
