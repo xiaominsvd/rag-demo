@@ -11,7 +11,7 @@ from retrieve import retrieve as vector_retrieve
 from hybrid import bm25_retrieve, hybrid_retrieve
 from answer import build_prompt
 
-question = sys.argv[1] if len(sys.argv) > 1 else "做原型应该选哪个向量数据库？"
+question = sys.argv[1] if len(sys.argv) > 1 else "Which vector database should I pick for a prototype?"
 
 METHODS = [
     ("Pure vector", vector_retrieve),
