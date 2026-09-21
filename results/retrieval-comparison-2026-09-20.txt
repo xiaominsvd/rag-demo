@@ -1,339 +1,67 @@
-RAG Retrieval Method Comparison
-Date: 2026-09-20 (re-run after index rebuild)
-Question: Which vector database should I pick for a prototype?
+RAG Retrieval Comparison -- Results Summary
+Date: 2026-09-20 | Corpus: 3 English docs (docs/*.md) | Index rebuilt 2026-09-20
 
-Notes:
-- All three methods score the same 13 chunks (chunk-0 ~ chunk-12); only the
-  scoring function differs. (Rebuilt index: English docs now split into 13
-  chunks instead of the previous 6.)
-- Each method takes top-3 chunks to build the prompt context. No
-  OPENAI_API_KEY was set, so the LLM answers were role-played by Muse
-  (Fable) following the prompt instruction: answer using ONLY the
-  reference material, do not fabricate.
-- Caveat: the embedding model is BAAI/bge-small-zh-v1.5 (Chinese-oriented),
-  now encoding English documents -- vector-side quality should be read with
-  that in mind.
+METHODS (same chunks, different scoring)
+- Vector: embedding distance, smaller is better (BAAI/bge-small-zh-v1.5)
+- BM25: keyword score, higher is better (jieba tokenization)
+- Hybrid: RRF fusion of both top-k lists (rrf_k=60), higher is better
 
 ================================================================
-Method 1: Pure vector retrieval (embedding distance, smaller is better)
+EXPERIMENT 1: retrieval methods (chunk_size=400 -> 13 chunks)
 ================================================================
-  rank 1: chunk-4  | 02-vector-databases.md | distance 0.2009
-  rank 2: chunk-2  | 01-intro-to-rag.md     | distance 0.2557
-  rank 3: chunk-6  | 02-vector-databases.md | distance 0.2949
+Q1 "Which vector database should I pick for a prototype?"
+  vector: chunk-4, chunk-2, chunk-6
+  BM25:   chunk-6, chunk-2, chunk-12
+  hybrid: chunk-6, chunk-2, chunk-4
+  => All three answer "Chroma" (via chunk-6: "lightweight, Python-native;
+     great for prototypes"). NONE retrieved chunk-7 with the crisp rule
+     ("Under 1M vectors on a single machine: Chroma or FAISS is enough")
+     -- the "## Selection Advice" header got split from its body.
 
-  chunk-4: intro to vector databases ("purpose-built for storing
-           high-dimensional vectors ... ANN queries").
-  chunk-2: the RAG pipeline (indexing -> retrieval -> generation).
-           Off-topic for this question.
-  chunk-6: "Chroma: lightweight, Python-native; great for prototypes and
-           small-scale projects like this one. FAISS: Meta's open-source
-           vector search engine -- fast, but a library, not a full
-           database. Qdrant / Weaviate / Milvus: production-grade..."
+Q2 "ANN" (abbreviation)
+  vector: chunk-8, chunk-10, chunk-1 -- misses completely
+  BM25:   chunk-4 (2.346), everything else 0.000 -- decisive win
+  hybrid: chunk-1 (0.032), chunk-8 (0.016), chunk-4 (0.016)
+  => Hybrid HURTS here: a chunk ranked #3 by both methods (2/63 = 0.032)
+     outranks the chunk BM25 ranked #1 (1/61 = 0.016).
 
-LLM answer:
-  For a prototype, go with Chroma -- it's lightweight, Python-native, and
-  described as great for prototypes and small-scale projects. FAISS is
-  fast but a library rather than a full database; Qdrant / Weaviate /
-  Milvus are production-grade options.
-
-================================================================
-Method 2: Pure BM25 keyword retrieval (higher score is better)
-================================================================
-  rank 1: chunk-6  | 02-vector-databases.md              | score 12.2111
-  rank 2: chunk-2  | 01-intro-to-rag.md                  | score 11.6261
-  rank 3: chunk-12 | 03-rag-optimization-vs-fine-tuning.md | score 10.5428
-
-  chunk-6: same "Chroma great for prototypes" list as above.
-  chunk-2: the RAG pipeline. Off-topic.
-  chunk-12: "many production systems use fine-tuning for behavior and
-           style, RAG for knowledge." Off-topic.
-
-LLM answer:
-  For a prototype, go with Chroma -- lightweight, Python-native, great
-  for prototypes and small-scale projects. (Same core answer as vector;
-  chunk-12 contributes nothing.)
+Q3 "What's the difference between RAG and fine-tuning?"
+  => All three surface chunk-12 ("not mutually exclusive..."); hybrid
+     ranks it a clear #1 (0.033). When both methods agree, RRF amplifies
+     the consensus.
 
 ================================================================
-Method 3: Hybrid retrieval with RRF (rank fusion, higher is better)
+EXPERIMENT 2: chunk_size sweep (prototype question)
 ================================================================
-  rank 1: chunk-6 | 02-vector-databases.md | RRF 0.03227 (= 1/63 + 1/61)
-  rank 2: chunk-2 | 01-intro-to-rag.md     | RRF 0.03226 (= 1/62 + 1/62)
-  rank 3: chunk-4 | 02-vector-databases.md | RRF 0.01639 (= 1/61)
-
-  Same chunk set as pure vector, reordered: the "Chroma great for
-  prototypes" chunk-6 moves to rank 1. The off-topic chunk-12 from BM25
-  is dropped.
-
-LLM answer:
-  For a prototype, go with Chroma -- lightweight, Python-native, great
-  for prototypes and small-scale projects like this one.
-
-================================================================
-Takeaways
-================================================================
-- This time all three methods retrieve chunk-6, so all three answers
-  converge on "Chroma". The methods differ only in noise chunks and
-  ordering -- a much less dramatic split than the previous Chinese-docs
-  run.
-- The crispest selection rule ("Under 1M vectors on a single machine:
-  Chroma or FAISS is enough.") lives in chunk-7, which NONE of the three
-  methods retrieved. Why? A chunking artifact: the "## Selection Advice"
-  header landed at the tail of chunk-6 while its body became chunk-7, so
-  the advice chunk has almost no shared vocabulary with the question.
-  Lesson: header-aware chunking (keep a header with its body) matters as
-  much as the retrieval algorithm.
-- Vector and hybrid returned the identical chunk set here; hybrid's only
-  effect was promoting chunk-6 to rank 1 via the rank swap (BM25 #1 +
-  vector #3 beats vector #2 + BM25 #2 by 0.00001).
-- BM25 still drags in an off-topic chunk (chunk-12), same weakness as
-  before: lexical match without semantic understanding.
-
+size | chunks | crisp selection advice retrieved?
+ 200 |  29    | NO -- fragmentation: bare header "# Vector Databases"
+                ranks vector #2 (zero content); sentences split mid-word
+                ("he model first retrieves..."); the advice chunk exists
+                but shares ~0 query tokens ("vectors" != "vector")
+ 400 |  13    | NO -- header/body split (see Experiment 1)
+ 800 |   6    | YES -- header+body merged into one chunk; all three
+                methods retrieve it. Winner on this corpus.
+1600 |   3    | N/A -- one chunk per document; every method's top-3 IS
+                the whole corpus. Retrieval becomes pure ordering theater
+                (hybrid even produced a perfect three-way tie at 0.032).
 
 ================================================================
-Part 2: compare.py -- 3 queries x 3 methods (score tables)
+CONCLUSIONS
 ================================================================
-Run: python scripts/compare.py (top-3 per method, rebuilt English index)
+1. No method wins everywhere. BM25 owns exact terms/abbreviations
+   ("ANN"); vectors handle paraphrase ("prototype" -> "small-scale");
+   hybrid usually gets the best of both -- but not always.
+2. Hybrid/RRF is not magic. A chunk lukewarm in both lists (2/63) can
+   beat a chunk one method is certain about (1/61). Seen at chunk
+   sizes 400, 800 and 200 -- a fusion property, not a chunking artifact.
+3. Chunking is first-class. The header/body split hid the best answer
+   at 400; 800 healed it; 200 fragmented meaning into rankable noise;
+   1600 made retrieval pointless. Fix chunking before tuning rankers.
+4. Match the embedding model to the corpus language (bge-small-zh on
+   English "ANN" ranked essentially at random).
+5. On a tiny corpus, skip RAG -- just stuff all docs into the prompt.
+   RAG earns its keep only when the corpus doesn't fit the context
+   window, which is exactly when chunking granularity starts to matter.
 
-----------------------------------------------------------------
-Query 1: "ANN"  (abbreviation -- BM25's home turf)
-----------------------------------------------------------------
-Pure vector (smaller distance is better):
-  chunk-8  | 03-rag-optimization-vs-fine-tuning.md | 0.560  (# Optimizing RAG...)
-  chunk-10 | 03-rag-optimization-vs-fine-tuning.md | 0.576  (query rewriting...)
-  chunk-1  | 01-intro-to-rag.md                    | 0.583  (knowledge cutoff...)
-
-Pure BM25 (higher score is better):
-  chunk-4  | 02-vector-databases.md | 2.346  (contains "approximate nearest neighbor (ANN)")
-  chunk-0  | 01-intro-to-rag.md     | 0.000
-  chunk-1  | 01-intro-to-rag.md     | 0.000
-
-Hybrid RRF (higher is better):
-  chunk-1  | 01-intro-to-rag.md                    | 0.032  (= 1/63 + 1/63)
-  chunk-8  | 03-rag-optimization-vs-fine-tuning.md | 0.016  (= 1/61)
-  chunk-4  | 02-vector-databases.md                | 0.016  (= 1/61)
-
-Takeaway: BM25 wins decisively -- only chunk-4 contains the literal
-"ANN" and it scores 2.346 while everything else scores 0. Vector search
-misses completely (the Chinese-oriented embedding model maps the bare
-abbreviation "ANN" to unrelated RAG-optimization chunks). And hybrid
-actually HURTS here: chunk-1, ranked #3 by both methods (2/63 = 0.032),
-beats chunk-4, ranked #1 by BM25 (1/61 = 0.016). Lesson: RRF fusion is
-not always best -- a chunk mediocre in both lists can outrank a chunk
-that one method is certain about.
-
-----------------------------------------------------------------
-Query 2: "Which vector database should I pick for a prototype?"
-----------------------------------------------------------------
-Pure vector:
-  chunk-4 | 02-vector-databases.md | 0.201
-  chunk-2 | 01-intro-to-rag.md     | 0.256
-  chunk-6 | 02-vector-databases.md | 0.295
-Pure BM25:
-  chunk-6  | 02-vector-databases.md              | 12.211
-  chunk-2  | 01-intro-to-rag.md                  | 11.626
-  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 10.543
-Hybrid RRF:
-  chunk-6 | 02-vector-databases.md | 0.032
-  chunk-2 | 01-intro-to-rag.md     | 0.032
-  chunk-4 | 02-vector-databases.md | 0.016
-
-(Deep dive with full contexts and role-played LLM answers: see Part 1
-above. All three converge on "Chroma"; nobody retrieves chunk-7 with
-the crisp "Under 1M vectors ... Chroma or FAISS is enough" rule --
-a chunking artifact worth fixing.)
-
-----------------------------------------------------------------
-Query 3: "What's the difference between RAG and fine-tuning?"
-----------------------------------------------------------------
-Pure vector:
-  chunk-0  | 01-intro-to-rag.md                    | 0.327  (intro to RAG)
-  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 0.356  ("not mutually exclusive...")
-  chunk-3  | 01-intro-to-rag.md                    | 0.375  ("garbage in, garbage out")
-Pure BM25:
-  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 13.333
-  chunk-10 | 03-rag-optimization-vs-fine-tuning.md | 10.865  (query rewriting...)
-  chunk-2  | 01-intro-to-rag.md                    | 9.627   (RAG pipeline)
-Hybrid RRF:
-  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 0.033  (= 1/62 + 1/61)
-  chunk-0  | 01-intro-to-rag.md                    | 0.016  (= 1/61)
-  chunk-10 | 03-rag-optimization-vs-fine-tuning.md | 0.016  (= 1/62)
-
-Takeaway: the easy query -- all three methods surface chunk-12
-("They're not mutually exclusive: many production systems use
-fine-tuning for behavior and style, RAG for knowledge."), and hybrid
-ranks it a clear #1 (top-2 in both lists). When both methods agree,
-RRF amplifies the consensus instead of diluting it.
-
-================================================================
-Overall lessons (Part 1 + Part 2)
-================================================================
-1. No single method wins everywhere: BM25 dominates exact terms /
-   abbreviations ("ANN"); vectors handle paraphrase ("prototype" ->
-   "small-scale"); hybrid usually gets the best of both.
-2. But hybrid is not magic: on "ANN" it ranked the correct chunk #3,
-   below a chunk both methods felt lukewarm about. Fusion assumes the
-   methods' errors are uncorrelated -- when one method is confidently
-   right and the other is confidently wrong, RRF sides with the
-   lukewarm middle.
-3. Chunking is a first-class citizen: the "Selection Advice" header got
-   separated from its body (chunk-6 vs chunk-7), making the best answer
-   chunk nearly unretrievable by any method. Fix the chunking before
-   tuning the ranker.
-4. The embedding model matters: bge-small-zh-v1.5 is Chinese-oriented;
-   on the bare English abbreviation "ANN" its ranking was essentially
-   random. Match the embedding model to the corpus language.
-
-
-================================================================
-Part 3: chunk_size=800 experiment (6 chunks)
-================================================================
-Change: scripts/build_index.py -> chunk_text(..., chunk_size=800).
-Effect: 13 -> 6 chunks. The "## Selection Advice" header reunites
-with its body: chunk-3 now holds BOTH the choices list ("Chroma:
-lightweight, Python-native; great for prototypes...") AND the crisp
-rule ("Under 1M vectors on a single machine: Chroma or FAISS is
-enough.").
-
-compare.py results (top-3 per method):
-
-Query "ANN":
-  vector: chunk-5 (0.577), chunk-0 (0.584), chunk-4 (0.590) -- misses again
-  BM25:   chunk-2 (1.312), chunk-0 (0.000), chunk-1 (0.000) -- nails it
-          (chunk-2 now contains "approximate nearest neighbor (ANN)";
-          score lower than before because the chunk is longer)
-  hybrid: chunk-0 (0.032), chunk-5 (0.016), chunk-2 (0.016)
-          -- same pathology: lukewarm-middle chunk-0 beats BM25's #1
-
-Query "Which vector database should I pick for a prototype?":
-  vector: chunk-2 (0.225), chunk-1 (0.259), chunk-3 (0.311)
-  BM25:   chunk-3 (6.150), chunk-1 (6.100), chunk-4 (5.470)
-  hybrid: chunk-3 (0.032), chunk-1 (0.032), chunk-2 (0.016)
-  -- ALL THREE now retrieve the merged chunk-3, i.e. the full answer
-     INCLUDING the crisp selection rule. The chunking fix is validated:
-     no method could reach chunk-7 at size 400; at 800 the advice is
-     reachable by everyone.
-
-Query "What's the difference between RAG and fine-tuning?":
-  vector: chunk-0 (0.332), chunk-5 (0.364), chunk-4 (0.374)
-  BM25:   chunk-5 (7.525), chunk-4 (6.368), chunk-1 (5.723)
-  hybrid: chunk-5 (0.033), chunk-4 (0.032), chunk-0 (0.016) -- clean,
-          consensus chunk (the comparison table) ranked #1.
-
-================================================================
-Part 4: chunk_size=200 experiment (29 chunks)
-================================================================
-Change: scripts/build_index.py -> chunk_text(..., chunk_size=200).
-Effect: 13 -> 29 chunks. Fragmentation is severe:
-  - chunk-0 (14 chars): "# Intro to RAG" -- a lonely header
-  - chunk-9 (18 chars): "# Vector Databases" -- a lonely header
-  - chunk-14 (17 chars): "## Common Choices" -- a lonely header
-  - chunk-11 (82 chars): "r (ANN) queries -- ..." -- the ANN mention isolated
-  - chunk-2: "he model first retrieves..." / chunk-4: "oesn't know
-    something..." -- mid-sentence hard splits
-  - chunk-18 (152 chars): "Under 1M vectors on a single machine: Chroma
-    or FAISS is enough." -- clean and precise, BUT shares almost no
-    tokens with the prototype query ("vectors" != "vector" for jieba,
-    no "prototype") -> nearly invisible to BM25.
-
-compare.py results (top-3 per method):
-
-Query "ANN":
-  vector: chunk-11 (0.389), chunk-9 (0.508), chunk-27 (0.531)
-  BM25:   chunk-11 (2.948), chunk-10 (2.279), chunk-0 (0.000)
-  hybrid: chunk-11 (0.033), chunk-9 (0.016), chunk-10 (0.016)
-  -- the one bright spot for size 200: the tiny focused chunk-11 lets
-     ALL THREE methods agree. Precision without context can work for
-     exact-term queries.
-
-Query "Which vector database should I pick for a prototype?":
-  vector: chunk-10 (0.197), chunk-9 (0.211), chunk-6 (0.261)
-          -- chunk-9, a BARE HEADER with zero content, ranks #2 by
-             embedding similarity. Fed to the LLM it would waste a
-             whole source slot on "# Vector Databases".
-  BM25:   chunk-15 (16.977), chunk-6 (15.584), chunk-28 (14.927)
-          -- BM25 nails the precise chunk-15 ("Chroma: lightweight,
-             Python-native; great for prototypes").
-  hybrid: chunk-6 (0.032), chunk-10 (0.016), chunk-15 (0.016)
-          -- pathology again: the off-topic RAG-pipeline chunk-6
-             (lukewarm in both lists) outranks chunk-15, BM25's #1.
-
-Query "What's the difference between RAG and fine-tuning?":
-  vector: chunk-24 (0.242), chunk-5 (0.325), chunk-1 (0.337)
-  BM25:   chunk-28 (17.182), chunk-24 (13.774), chunk-6 (13.035)
-  hybrid: chunk-24 (0.033), chunk-28 (0.016), chunk-5 (0.016)
-          -- hybrid picks chunk-24 over chunk-28 (BM25's #1). Same
-             lukewarm-middle effect, third occurrence.
-
-================================================================
-Cross-size comparison: the prototype question
-================================================================
-size | #chunks | vector top-3 | BM25 top-3  | hybrid top-3 | crisp advice?
- 400 |   13    | 4, 2, 6      | 6, 2, 12    | 6, 2, 4      | no  (header/body split)
- 800 |    6    | 2, 1, 3      | 3, 1, 4     | 3, 1, 2      | YES (merged chunk-3)
- 200 |   29    | 10, 9, 6     | 15, 6, 28   | 6, 10, 15    | no  (chunk-18 token-isolated;
-                                                     header-only chunk-9 wastes a slot)
-
-Verdict on this corpus: 800 wins. It heals the header/body split while
-keeping each chunk semantically whole, and every method retrieves the
-answer-bearing chunk. 200 gives precision at the cost of meaning --
-empty headers rank, sentences break mid-word, and precise-but-isolated
-chunks become unreachable. 400 sits in the middle but paid the
-header/body-split tax. The "400-800 chars is a common starting point"
-note in chunking.py held up: the top of that range beat both ends here.
-
-Two method-level findings that survived ALL chunk sizes:
-1. Hybrid's lukewarm-middle pathology (ANN@400, ANN@800,
-   prototype@200, RAG-vs-FT@200): a chunk ranked #3 by both methods
-   (2/63 = 0.032) beats a chunk ranked #1 by one method (1/61 = 0.016).
-   This is a property of RRF fusion, not of chunking.
-2. BM25's off-topic lexical matches (chunk-12@400, chunk-12@200):
-   shared words without shared meaning. Also a method property.
-
-(Note: after the experiments, build_index.py was reverted to the
-default chunk_size=400 and the index rebuilt, so the repo default is
-unchanged. Say the word to make 800 the default.)
-
-
-================================================================
-Part 5: chunk_size=1600 experiment (3 chunks -- the degenerate limit)
-================================================================
-Change: scripts/build_index.py -> chunk_text(..., chunk_size=1600).
-Effect: 3 chunks, exactly one per document (1154 / 1140 / 1178 chars).
-At this size "retrieval" stops being retrieval.
-
-compare.py results -- note: EVERY method's top-3 is now ALL 3 chunks,
-i.e. the entire corpus. Only the ORDERING differs; the LLM would see
-identical content no matter which method "wins":
-
-Query "ANN":
-  vector: chunk-2 (0.571), chunk-0 (0.579), chunk-1 (0.585)
-  BM25:   chunk-1 (0.521), chunk-0 (0.000), chunk-2 (0.000)
-  hybrid: chunk-2 (0.032), chunk-1 (0.032), chunk-0 (0.032)
-          -- a perfect three-way tie: each chunk is #1 in one method
-             and #3 in the other (or #2 in both). 1/61+1/63 = 2/62 to
-             three decimals. RRF cannot distinguish them at all.
-
-Query "Which vector database should I pick for a prototype?":
-  vector: chunk-1 (0.228), chunk-2 (0.377), chunk-0 (0.392)
-  BM25:   chunk-1 (1.205), chunk-0 (1.145), chunk-2 (1.125)
-          -- BM25 scores collapse: longer docs get heavier length
-             normalization (compare 2.346 for "ANN" at size 400).
-  hybrid: chunk-1 (0.033), chunk-2 (0.032), chunk-0 (0.032)
-
-Query "What's the difference between RAG and fine-tuning?":
-  vector: chunk-0 (0.335), chunk-2 (0.394), chunk-1 (0.506)
-  BM25:   chunk-2 (2.538), chunk-0 (1.212), chunk-1 (1.095)
-  hybrid: chunk-0 (0.033), chunk-2 (0.033), chunk-1 (0.032)
-          -- chunk-0 and chunk-2 tie exactly (1/61+1/62 both ways);
-             near-tie again, broken only by insertion order.
-
-Takeaway: 1600 proves the degenerate limit. When chunk_size >= corpus
-size, the method comparison is theater -- vector, BM25 and hybrid all
-hand the LLM the same three documents in a slightly different order.
-The honest conclusion: on a corpus this small you don't need RAG at
-all; just stuff all three docs into the prompt. RAG earns its keep
-only when the corpus does NOT fit in the context window -- which is
-exactly when chunking granularity starts to matter (see Parts 3-4).
-
-(Note: build_index.py reverted to the default chunk_size=400 and the
-index rebuilt afterwards; the repo default is unchanged.)
+Repo default chunk_size=400 unchanged; sweep was experiment-only
+(rebuilt back to 13 chunks afterwards).
