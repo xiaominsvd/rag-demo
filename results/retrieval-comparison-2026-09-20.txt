@@ -1,59 +1,72 @@
-RAG 检索方法对比实验
-日期：2026-09-20
-问题：做原型应该选哪个向量数据库？
+RAG Retrieval Method Comparison
+Date: 2026-09-20
+Question: Which vector database should I pick for a prototype?
 
-说明：
-- 三种方法打分的是同一批 6 个 chunk（chunk-0 ~ chunk-5），只换打分函数。
-- 每种方法取 top-3 拼成 prompt context。当时没有 OPENAI_API_KEY，
-  LLM 作答由 Muse（Fable）按 prompt 指令角色扮演：只能基于参考资料回答，不许编造。
-
-================================================================
-方法 1：纯向量检索（embedding 距离，越小越相关）
-================================================================
-  rank 1: chunk-2 | 02-向量数据库.md | 距离 0.2747
-  rank 2: chunk-3 | 02-向量数据库.md | 距离 0.4794
-  rank 3: chunk-1 | 01-rag简介.md     | 距离 0.5034
-
-LLM 回答：
-  做原型推荐 Chroma 或 FAISS。资料里明确写了：数据量 < 100 万、
-  单机运行时，这两个足够。其中 Chroma 轻量、Python 原生，适合原型
-  这类小规模场景；FAISS 是 Meta 开源的向量检索引擎，速度快。
+Notes:
+- All three methods score the same 6 chunks (chunk-0 ~ chunk-5); only the
+  scoring function differs.
+- Each method takes top-3 chunks to build the prompt context. No
+  OPENAI_API_KEY was set, so the LLM answers were role-played by Muse
+  (Fable) following the prompt instruction: answer using ONLY the
+  reference material, do not fabricate.
 
 ================================================================
-方法 2：纯 BM25 关键词检索（分数越大越相关）
+Method 1: Pure vector retrieval (embedding distance, smaller is better)
 ================================================================
-  rank 1: chunk-2 | 02-向量数据库.md       | 得分 1.9663
-  rank 2: chunk-4 | 03-rag优化与微调对比.md | 得分 1.1906
-  rank 3: chunk-0 | 01-rag简介.md           | 得分 0.4638
+  rank 1: chunk-2 | 02-向量数据库.md | distance 0.2747
+  rank 2: chunk-3 | 02-向量数据库.md | distance 0.4794
+  rank 3: chunk-1 | 01-rag简介.md     | distance 0.5034
 
-LLM 回答：
-  根据资料，Chroma 轻量、Python 原生，适合原型这类小规模场景。
-  （资料里没有明确的选型建议，无法给出"Chroma 或 FAISS 足够"
-  这种斩钉截铁的推荐。）
-
-注意：BM25 漏掉了 chunk-3（"数据量 < 100 万、单机运行：
-Chroma 或 FAISS 足够"），因为问题分词出的"原型/向量/数据库"
-与 chunk-3 的"小规模场景/单机运行"零公共词。这是关键词检索
-换个说法就认不出来的典型缺陷。
+LLM answer:
+  For a prototype, Chroma or FAISS is recommended. The material states
+  explicitly: with data < 1M rows running on a single machine, these two
+  are enough. Chroma is lightweight and Python-native, a good fit for
+  prototype-scale scenarios; FAISS is Meta's open-source vector search
+  engine, fast but a library rather than a full database.
 
 ================================================================
-方法 3：混合检索 RRF（名次融合，分数越大越相关）
+Method 2: Pure BM25 keyword retrieval (higher score is better)
+================================================================
+  rank 1: chunk-2 | 02-向量数据库.md       | score 1.9663
+  rank 2: chunk-4 | 03-rag优化与微调对比.md | score 1.1906
+  rank 3: chunk-0 | 01-rag简介.md           | score 0.4638
+
+LLM answer:
+  According to the material, Chroma is lightweight and Python-native,
+  suitable for prototype-scale scenarios.
+  (The material contains no explicit selection recommendation, so the
+  crisp "Chroma or FAISS is enough" statement cannot be made.)
+
+Note: BM25 missed chunk-3 ("data < 1M, single machine: Chroma or FAISS
+is enough") because the query tokenizes into "prototype/vector/database"
+while chunk-3 is worded as "small-scale scenario / single-machine run" --
+zero shared terms. A classic keyword-search failure: paraphrase it and
+the match is gone.
+
+================================================================
+Method 3: Hybrid retrieval with RRF (rank fusion, higher is better)
 ================================================================
   rank 1: chunk-2 | 02-向量数据库.md       | RRF 0.0328
   rank 2: chunk-3 | 02-向量数据库.md       | RRF 0.0161
   rank 3: chunk-4 | 03-rag优化与微调对比.md | RRF 0.0161
 
-LLM 回答：
-  做原型推荐 Chroma 或 FAISS：数据量 < 100 万、单机运行的情况下
-  两者足够。其中 Chroma 轻量、Python 原生，最适合原型快速起步。
+LLM answer:
+  For a prototype, Chroma or FAISS is recommended: with data < 1M rows on
+  a single machine, both are enough. Chroma is lightweight and
+  Python-native, the fastest path for prototyping.
 
 ================================================================
-结论
+Takeaways
 ================================================================
-- 纯向量：答案明确（命中 chunk-3），但混入 1 个跑题 chunk（chunk-1）。
-- 纯 BM25：答案单薄含糊——没说错话，但漏掉了关键选型建议；
-  用户从答案里察觉不到信息缺失，这是检索拉胯时最隐蔽的症状。
-- 混合 RRF：取并集，保留了向量侧的 chunk-3 和 BM25 侧的 chunk-4，
-  挤掉了跑题的 chunk-1，答案最完整。
-- prompt 的其余部分三份完全相同，检索塞进的三个 chunk 决定了
-  答案的天花板：垃圾进，垃圾出。
+- Pure vector: clear answer (hit chunk-3), but one off-topic chunk
+  (chunk-1) wastes context.
+- Pure BM25: thin, hedged answer -- nothing factually wrong, but the key
+  selection recommendation is missing. The user cannot tell information
+  is missing from the answer; this is the most insidious symptom of weak
+  retrieval.
+- Hybrid RRF: union of both sides -- kept chunk-3 from the vector side
+  and chunk-4 from the BM25 side, dropped the off-topic chunk-1. Most
+  complete answer.
+- Everything else in the three prompts is identical; the three chunks
+  stuffed into the context set the ceiling for answer quality:
+  garbage in, garbage out.
