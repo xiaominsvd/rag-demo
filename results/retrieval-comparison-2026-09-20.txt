@@ -182,3 +182,113 @@ Overall lessons (Part 1 + Part 2)
 4. The embedding model matters: bge-small-zh-v1.5 is Chinese-oriented;
    on the bare English abbreviation "ANN" its ranking was essentially
    random. Match the embedding model to the corpus language.
+
+
+================================================================
+Part 3: chunk_size=800 experiment (6 chunks)
+================================================================
+Change: scripts/build_index.py -> chunk_text(..., chunk_size=800).
+Effect: 13 -> 6 chunks. The "## Selection Advice" header reunites
+with its body: chunk-3 now holds BOTH the choices list ("Chroma:
+lightweight, Python-native; great for prototypes...") AND the crisp
+rule ("Under 1M vectors on a single machine: Chroma or FAISS is
+enough.").
+
+compare.py results (top-3 per method):
+
+Query "ANN":
+  vector: chunk-5 (0.577), chunk-0 (0.584), chunk-4 (0.590) -- misses again
+  BM25:   chunk-2 (1.312), chunk-0 (0.000), chunk-1 (0.000) -- nails it
+          (chunk-2 now contains "approximate nearest neighbor (ANN)";
+          score lower than before because the chunk is longer)
+  hybrid: chunk-0 (0.032), chunk-5 (0.016), chunk-2 (0.016)
+          -- same pathology: lukewarm-middle chunk-0 beats BM25's #1
+
+Query "Which vector database should I pick for a prototype?":
+  vector: chunk-2 (0.225), chunk-1 (0.259), chunk-3 (0.311)
+  BM25:   chunk-3 (6.150), chunk-1 (6.100), chunk-4 (5.470)
+  hybrid: chunk-3 (0.032), chunk-1 (0.032), chunk-2 (0.016)
+  -- ALL THREE now retrieve the merged chunk-3, i.e. the full answer
+     INCLUDING the crisp selection rule. The chunking fix is validated:
+     no method could reach chunk-7 at size 400; at 800 the advice is
+     reachable by everyone.
+
+Query "What's the difference between RAG and fine-tuning?":
+  vector: chunk-0 (0.332), chunk-5 (0.364), chunk-4 (0.374)
+  BM25:   chunk-5 (7.525), chunk-4 (6.368), chunk-1 (5.723)
+  hybrid: chunk-5 (0.033), chunk-4 (0.032), chunk-0 (0.016) -- clean,
+          consensus chunk (the comparison table) ranked #1.
+
+================================================================
+Part 4: chunk_size=200 experiment (29 chunks)
+================================================================
+Change: scripts/build_index.py -> chunk_text(..., chunk_size=200).
+Effect: 13 -> 29 chunks. Fragmentation is severe:
+  - chunk-0 (14 chars): "# Intro to RAG" -- a lonely header
+  - chunk-9 (18 chars): "# Vector Databases" -- a lonely header
+  - chunk-14 (17 chars): "## Common Choices" -- a lonely header
+  - chunk-11 (82 chars): "r (ANN) queries -- ..." -- the ANN mention isolated
+  - chunk-2: "he model first retrieves..." / chunk-4: "oesn't know
+    something..." -- mid-sentence hard splits
+  - chunk-18 (152 chars): "Under 1M vectors on a single machine: Chroma
+    or FAISS is enough." -- clean and precise, BUT shares almost no
+    tokens with the prototype query ("vectors" != "vector" for jieba,
+    no "prototype") -> nearly invisible to BM25.
+
+compare.py results (top-3 per method):
+
+Query "ANN":
+  vector: chunk-11 (0.389), chunk-9 (0.508), chunk-27 (0.531)
+  BM25:   chunk-11 (2.948), chunk-10 (2.279), chunk-0 (0.000)
+  hybrid: chunk-11 (0.033), chunk-9 (0.016), chunk-10 (0.016)
+  -- the one bright spot for size 200: the tiny focused chunk-11 lets
+     ALL THREE methods agree. Precision without context can work for
+     exact-term queries.
+
+Query "Which vector database should I pick for a prototype?":
+  vector: chunk-10 (0.197), chunk-9 (0.211), chunk-6 (0.261)
+          -- chunk-9, a BARE HEADER with zero content, ranks #2 by
+             embedding similarity. Fed to the LLM it would waste a
+             whole source slot on "# Vector Databases".
+  BM25:   chunk-15 (16.977), chunk-6 (15.584), chunk-28 (14.927)
+          -- BM25 nails the precise chunk-15 ("Chroma: lightweight,
+             Python-native; great for prototypes").
+  hybrid: chunk-6 (0.032), chunk-10 (0.016), chunk-15 (0.016)
+          -- pathology again: the off-topic RAG-pipeline chunk-6
+             (lukewarm in both lists) outranks chunk-15, BM25's #1.
+
+Query "What's the difference between RAG and fine-tuning?":
+  vector: chunk-24 (0.242), chunk-5 (0.325), chunk-1 (0.337)
+  BM25:   chunk-28 (17.182), chunk-24 (13.774), chunk-6 (13.035)
+  hybrid: chunk-24 (0.033), chunk-28 (0.016), chunk-5 (0.016)
+          -- hybrid picks chunk-24 over chunk-28 (BM25's #1). Same
+             lukewarm-middle effect, third occurrence.
+
+================================================================
+Cross-size comparison: the prototype question
+================================================================
+size | #chunks | vector top-3 | BM25 top-3  | hybrid top-3 | crisp advice?
+ 400 |   13    | 4, 2, 6      | 6, 2, 12    | 6, 2, 4      | no  (header/body split)
+ 800 |    6    | 2, 1, 3      | 3, 1, 4     | 3, 1, 2      | YES (merged chunk-3)
+ 200 |   29    | 10, 9, 6     | 15, 6, 28   | 6, 10, 15    | no  (chunk-18 token-isolated;
+                                                     header-only chunk-9 wastes a slot)
+
+Verdict on this corpus: 800 wins. It heals the header/body split while
+keeping each chunk semantically whole, and every method retrieves the
+answer-bearing chunk. 200 gives precision at the cost of meaning --
+empty headers rank, sentences break mid-word, and precise-but-isolated
+chunks become unreachable. 400 sits in the middle but paid the
+header/body-split tax. The "400-800 chars is a common starting point"
+note in chunking.py held up: the top of that range beat both ends here.
+
+Two method-level findings that survived ALL chunk sizes:
+1. Hybrid's lukewarm-middle pathology (ANN@400, ANN@800,
+   prototype@200, RAG-vs-FT@200): a chunk ranked #3 by both methods
+   (2/63 = 0.032) beats a chunk ranked #1 by one method (1/61 = 0.016).
+   This is a property of RRF fusion, not of chunking.
+2. BM25's off-topic lexical matches (chunk-12@400, chunk-12@200):
+   shared words without shared meaning. Also a method property.
+
+(Note: after the experiments, build_index.py was reverted to the
+default chunk_size=400 and the index rebuilt, so the repo default is
+unchanged. Say the word to make 800 the default.)
