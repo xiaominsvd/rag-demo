@@ -65,3 +65,49 @@ CONCLUSIONS
 
 Repo default chunk_size=400 unchanged; sweep was experiment-only
 (rebuilt back to 13 chunks afterwards).
+
+
+================================================================
+Part 6: header-aware chunking (chunk_markdown, 14 chunks)
+================================================================
+Change: new chunk_markdown() in src/chunking.py -- splits on markdown
+headers, each section becomes "header path + body" (e.g. "Vector
+Databases > Selection Advice"); oversized sections fall back to
+paragraph packing with the path prepended. build_index.py now uses it.
+
+compare.py results (top-3 per method):
+
+Query "ANN":
+  vector: chunk-9 (0.569), chunk-7 (0.577), chunk-12 (0.580) -- misses
+  BM25:   chunk-4 (2.568), rest 0.000 -- nails it
+  hybrid: chunk-9 (0.016), chunk-4 (0.016), chunk-7 (0.016) -- chunk-4
+          (correct) ties with chunk-9, a 15-char empty header
+          ("Optimizing RAG"). The lonely-header imperfection bites.
+
+Query "Which vector database should I pick for a prototype?":
+  vector: chunk-7 (0.209), chunk-4 (0.212), chunk-6 (0.213)
+          -- all three from 02-vector-databases.md now (was: included
+             the off-topic RAG-pipeline chunk). Cleaner.
+  BM25:   chunk-6 (11.861), chunk-2 (11.435), chunk-13 (10.649)
+  hybrid: chunk-6 (0.032), chunk-7 (0.016), chunk-4 (0.016) -- clean #1.
+
+Query "What's the difference between RAG and fine-tuning?":
+  vector: chunk-13 (0.265), chunk-12 (0.333), chunk-3 (0.345)
+  BM25:   chunk-13 (13.924), chunk-12 (10.620), chunk-11 (10.227)
+  hybrid: chunk-13 (0.033), chunk-12 (0.032), chunk-3 (0.016) -- clean.
+
+The surprise: chunk-8 ("Vector Databases > Selection Advice" + "Under
+1M vectors on a single machine: Chroma or FAISS is enough") -- the very
+chunk this fix was built to rescue -- is STILL in no method's top-3.
+Why: vocabulary isolation. It shares almost no tokens with the query
+("vectors" != "vector" for jieba, no "prototype", "database" is plural
+in the header). At chunk_size=800 the brute-force merge had ACCIDENTALLY
+fixed this by gluing the "prototypes" vocabulary to the advice text.
+Structure-aware splitting gives cleaner chunks but re-isolates them.
+Remaining fixes live elsewhere: query rewriting, stemming, or HyDE --
+not in the splitter.
+
+Verdict: header-aware chunking is a strict improvement in chunk quality
+(no fragments, no header/body splits, self-describing chunks, cleaner
+vector results) but it does NOT by itself solve vocabulary mismatch.
+Kept as the default in build_index.py.

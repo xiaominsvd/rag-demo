@@ -7,13 +7,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from pathlib import Path
-from chunking import chunk_text
+from chunking import chunk_markdown
 from store import build_collection
 
 docs_dir = Path(__file__).resolve().parent.parent / "docs"
 chunks, metas = [], []
 for f in sorted(docs_dir.glob("*.md")):
-    for c in chunk_text(f.read_text(encoding="utf-8")):
+    for c in chunk_markdown(f.read_text(encoding="utf-8")):
         chunks.append(c)
         metas.append({"source": f.name})
 

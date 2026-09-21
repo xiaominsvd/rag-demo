@@ -28,6 +28,42 @@ def chunk_text(text: str, chunk_size: int = 400, overlap: int = 60):
     return chunks
 
 
+def chunk_markdown(text: str, chunk_size: int = 400, overlap: int = 60):
+    """Split markdown by headers so a header never separates from its body.
+
+    Each section becomes "header path + body" (e.g. "Vector Databases >
+    Selection Advice" followed by the section text). Sections longer than
+    chunk_size fall back to paragraph packing via chunk_text, with the
+    header path prepended to every piece so no chunk loses its context.
+    """
+    parts = re.split(r"(?m)^(#{1,6}\s+.*)$", text)
+    sections = []  # (level, title, body)
+    if parts[0].strip():
+        sections.append((0, "", parts[0].strip()))
+    for i in range(1, len(parts), 2):
+        hashes, title = parts[i].strip().split(None, 1)
+        body = parts[i + 1].strip()
+        sections.append((len(hashes), title, body))
+
+    chunks, stack = [], []  # stack tracks [(level, title)] for the path
+    for level, title, body in sections:
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        if level:
+            stack.append((level, title))
+        prefix = " > ".join(t for _, t in stack)
+        header = f"{prefix}\n" if prefix else ""
+        section_text = header + body
+        if len(section_text) <= chunk_size:
+            if section_text.strip():
+                chunks.append(section_text)
+        else:
+            budget = max(chunk_size - len(header), 100)
+            for piece in chunk_text(body, chunk_size=budget, overlap=overlap):
+                chunks.append(header + piece)
+    return chunks
+
+
 if __name__ == "__main__":
     demo = "Paragraph one. " * 100 + "\n\n" + "Paragraph two. " * 100
     for i, c in enumerate(chunk_text(demo)):
