@@ -87,3 +87,98 @@ Takeaways
   vector #3 beats vector #2 + BM25 #2 by 0.00001).
 - BM25 still drags in an off-topic chunk (chunk-12), same weakness as
   before: lexical match without semantic understanding.
+
+
+================================================================
+Part 2: compare.py -- 3 queries x 3 methods (score tables)
+================================================================
+Run: python scripts/compare.py (top-3 per method, rebuilt English index)
+
+----------------------------------------------------------------
+Query 1: "ANN"  (abbreviation -- BM25's home turf)
+----------------------------------------------------------------
+Pure vector (smaller distance is better):
+  chunk-8  | 03-rag-optimization-vs-fine-tuning.md | 0.560  (# Optimizing RAG...)
+  chunk-10 | 03-rag-optimization-vs-fine-tuning.md | 0.576  (query rewriting...)
+  chunk-1  | 01-intro-to-rag.md                    | 0.583  (knowledge cutoff...)
+
+Pure BM25 (higher score is better):
+  chunk-4  | 02-vector-databases.md | 2.346  (contains "approximate nearest neighbor (ANN)")
+  chunk-0  | 01-intro-to-rag.md     | 0.000
+  chunk-1  | 01-intro-to-rag.md     | 0.000
+
+Hybrid RRF (higher is better):
+  chunk-1  | 01-intro-to-rag.md                    | 0.032  (= 1/63 + 1/63)
+  chunk-8  | 03-rag-optimization-vs-fine-tuning.md | 0.016  (= 1/61)
+  chunk-4  | 02-vector-databases.md                | 0.016  (= 1/61)
+
+Takeaway: BM25 wins decisively -- only chunk-4 contains the literal
+"ANN" and it scores 2.346 while everything else scores 0. Vector search
+misses completely (the Chinese-oriented embedding model maps the bare
+abbreviation "ANN" to unrelated RAG-optimization chunks). And hybrid
+actually HURTS here: chunk-1, ranked #3 by both methods (2/63 = 0.032),
+beats chunk-4, ranked #1 by BM25 (1/61 = 0.016). Lesson: RRF fusion is
+not always best -- a chunk mediocre in both lists can outrank a chunk
+that one method is certain about.
+
+----------------------------------------------------------------
+Query 2: "Which vector database should I pick for a prototype?"
+----------------------------------------------------------------
+Pure vector:
+  chunk-4 | 02-vector-databases.md | 0.201
+  chunk-2 | 01-intro-to-rag.md     | 0.256
+  chunk-6 | 02-vector-databases.md | 0.295
+Pure BM25:
+  chunk-6  | 02-vector-databases.md              | 12.211
+  chunk-2  | 01-intro-to-rag.md                  | 11.626
+  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 10.543
+Hybrid RRF:
+  chunk-6 | 02-vector-databases.md | 0.032
+  chunk-2 | 01-intro-to-rag.md     | 0.032
+  chunk-4 | 02-vector-databases.md | 0.016
+
+(Deep dive with full contexts and role-played LLM answers: see Part 1
+above. All three converge on "Chroma"; nobody retrieves chunk-7 with
+the crisp "Under 1M vectors ... Chroma or FAISS is enough" rule --
+a chunking artifact worth fixing.)
+
+----------------------------------------------------------------
+Query 3: "What's the difference between RAG and fine-tuning?"
+----------------------------------------------------------------
+Pure vector:
+  chunk-0  | 01-intro-to-rag.md                    | 0.327  (intro to RAG)
+  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 0.356  ("not mutually exclusive...")
+  chunk-3  | 01-intro-to-rag.md                    | 0.375  ("garbage in, garbage out")
+Pure BM25:
+  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 13.333
+  chunk-10 | 03-rag-optimization-vs-fine-tuning.md | 10.865  (query rewriting...)
+  chunk-2  | 01-intro-to-rag.md                    | 9.627   (RAG pipeline)
+Hybrid RRF:
+  chunk-12 | 03-rag-optimization-vs-fine-tuning.md | 0.033  (= 1/62 + 1/61)
+  chunk-0  | 01-intro-to-rag.md                    | 0.016  (= 1/61)
+  chunk-10 | 03-rag-optimization-vs-fine-tuning.md | 0.016  (= 1/62)
+
+Takeaway: the easy query -- all three methods surface chunk-12
+("They're not mutually exclusive: many production systems use
+fine-tuning for behavior and style, RAG for knowledge."), and hybrid
+ranks it a clear #1 (top-2 in both lists). When both methods agree,
+RRF amplifies the consensus instead of diluting it.
+
+================================================================
+Overall lessons (Part 1 + Part 2)
+================================================================
+1. No single method wins everywhere: BM25 dominates exact terms /
+   abbreviations ("ANN"); vectors handle paraphrase ("prototype" ->
+   "small-scale"); hybrid usually gets the best of both.
+2. But hybrid is not magic: on "ANN" it ranked the correct chunk #3,
+   below a chunk both methods felt lukewarm about. Fusion assumes the
+   methods' errors are uncorrelated -- when one method is confidently
+   right and the other is confidently wrong, RRF sides with the
+   lukewarm middle.
+3. Chunking is a first-class citizen: the "Selection Advice" header got
+   separated from its body (chunk-6 vs chunk-7), making the best answer
+   chunk nearly unretrievable by any method. Fix the chunking before
+   tuning the ranker.
+4. The embedding model matters: bge-small-zh-v1.5 is Chinese-oriented;
+   on the bare English abbreviation "ANN" its ranking was essentially
+   random. Match the embedding model to the corpus language.
