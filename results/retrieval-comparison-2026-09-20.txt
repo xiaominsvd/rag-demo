@@ -1,72 +1,89 @@
 RAG Retrieval Method Comparison
-Date: 2026-09-20
+Date: 2026-09-20 (re-run after index rebuild)
 Question: Which vector database should I pick for a prototype?
 
 Notes:
-- All three methods score the same 6 chunks (chunk-0 ~ chunk-5); only the
-  scoring function differs.
+- All three methods score the same 13 chunks (chunk-0 ~ chunk-12); only the
+  scoring function differs. (Rebuilt index: English docs now split into 13
+  chunks instead of the previous 6.)
 - Each method takes top-3 chunks to build the prompt context. No
   OPENAI_API_KEY was set, so the LLM answers were role-played by Muse
   (Fable) following the prompt instruction: answer using ONLY the
   reference material, do not fabricate.
+- Caveat: the embedding model is BAAI/bge-small-zh-v1.5 (Chinese-oriented),
+  now encoding English documents -- vector-side quality should be read with
+  that in mind.
 
 ================================================================
 Method 1: Pure vector retrieval (embedding distance, smaller is better)
 ================================================================
-  rank 1: chunk-2 | 02-向量数据库.md | distance 0.2747
-  rank 2: chunk-3 | 02-向量数据库.md | distance 0.4794
-  rank 3: chunk-1 | 01-rag简介.md     | distance 0.5034
+  rank 1: chunk-4  | 02-vector-databases.md | distance 0.2009
+  rank 2: chunk-2  | 01-intro-to-rag.md     | distance 0.2557
+  rank 3: chunk-6  | 02-vector-databases.md | distance 0.2949
+
+  chunk-4: intro to vector databases ("purpose-built for storing
+           high-dimensional vectors ... ANN queries").
+  chunk-2: the RAG pipeline (indexing -> retrieval -> generation).
+           Off-topic for this question.
+  chunk-6: "Chroma: lightweight, Python-native; great for prototypes and
+           small-scale projects like this one. FAISS: Meta's open-source
+           vector search engine -- fast, but a library, not a full
+           database. Qdrant / Weaviate / Milvus: production-grade..."
 
 LLM answer:
-  For a prototype, Chroma or FAISS is recommended. The material states
-  explicitly: with data < 1M rows running on a single machine, these two
-  are enough. Chroma is lightweight and Python-native, a good fit for
-  prototype-scale scenarios; FAISS is Meta's open-source vector search
-  engine, fast but a library rather than a full database.
+  For a prototype, go with Chroma -- it's lightweight, Python-native, and
+  described as great for prototypes and small-scale projects. FAISS is
+  fast but a library rather than a full database; Qdrant / Weaviate /
+  Milvus are production-grade options.
 
 ================================================================
 Method 2: Pure BM25 keyword retrieval (higher score is better)
 ================================================================
-  rank 1: chunk-2 | 02-向量数据库.md       | score 1.9663
-  rank 2: chunk-4 | 03-rag优化与微调对比.md | score 1.1906
-  rank 3: chunk-0 | 01-rag简介.md           | score 0.4638
+  rank 1: chunk-6  | 02-vector-databases.md              | score 12.2111
+  rank 2: chunk-2  | 01-intro-to-rag.md                  | score 11.6261
+  rank 3: chunk-12 | 03-rag-optimization-vs-fine-tuning.md | score 10.5428
+
+  chunk-6: same "Chroma great for prototypes" list as above.
+  chunk-2: the RAG pipeline. Off-topic.
+  chunk-12: "many production systems use fine-tuning for behavior and
+           style, RAG for knowledge." Off-topic.
 
 LLM answer:
-  According to the material, Chroma is lightweight and Python-native,
-  suitable for prototype-scale scenarios.
-  (The material contains no explicit selection recommendation, so the
-  crisp "Chroma or FAISS is enough" statement cannot be made.)
-
-Note: BM25 missed chunk-3 ("data < 1M, single machine: Chroma or FAISS
-is enough") because the query tokenizes into "prototype/vector/database"
-while chunk-3 is worded as "small-scale scenario / single-machine run" --
-zero shared terms. A classic keyword-search failure: paraphrase it and
-the match is gone.
+  For a prototype, go with Chroma -- lightweight, Python-native, great
+  for prototypes and small-scale projects. (Same core answer as vector;
+  chunk-12 contributes nothing.)
 
 ================================================================
 Method 3: Hybrid retrieval with RRF (rank fusion, higher is better)
 ================================================================
-  rank 1: chunk-2 | 02-向量数据库.md       | RRF 0.0328
-  rank 2: chunk-3 | 02-向量数据库.md       | RRF 0.0161
-  rank 3: chunk-4 | 03-rag优化与微调对比.md | RRF 0.0161
+  rank 1: chunk-6 | 02-vector-databases.md | RRF 0.03227 (= 1/63 + 1/61)
+  rank 2: chunk-2 | 01-intro-to-rag.md     | RRF 0.03226 (= 1/62 + 1/62)
+  rank 3: chunk-4 | 02-vector-databases.md | RRF 0.01639 (= 1/61)
+
+  Same chunk set as pure vector, reordered: the "Chroma great for
+  prototypes" chunk-6 moves to rank 1. The off-topic chunk-12 from BM25
+  is dropped.
 
 LLM answer:
-  For a prototype, Chroma or FAISS is recommended: with data < 1M rows on
-  a single machine, both are enough. Chroma is lightweight and
-  Python-native, the fastest path for prototyping.
+  For a prototype, go with Chroma -- lightweight, Python-native, great
+  for prototypes and small-scale projects like this one.
 
 ================================================================
 Takeaways
 ================================================================
-- Pure vector: clear answer (hit chunk-3), but one off-topic chunk
-  (chunk-1) wastes context.
-- Pure BM25: thin, hedged answer -- nothing factually wrong, but the key
-  selection recommendation is missing. The user cannot tell information
-  is missing from the answer; this is the most insidious symptom of weak
-  retrieval.
-- Hybrid RRF: union of both sides -- kept chunk-3 from the vector side
-  and chunk-4 from the BM25 side, dropped the off-topic chunk-1. Most
-  complete answer.
-- Everything else in the three prompts is identical; the three chunks
-  stuffed into the context set the ceiling for answer quality:
-  garbage in, garbage out.
+- This time all three methods retrieve chunk-6, so all three answers
+  converge on "Chroma". The methods differ only in noise chunks and
+  ordering -- a much less dramatic split than the previous Chinese-docs
+  run.
+- The crispest selection rule ("Under 1M vectors on a single machine:
+  Chroma or FAISS is enough.") lives in chunk-7, which NONE of the three
+  methods retrieved. Why? A chunking artifact: the "## Selection Advice"
+  header landed at the tail of chunk-6 while its body became chunk-7, so
+  the advice chunk has almost no shared vocabulary with the question.
+  Lesson: header-aware chunking (keep a header with its body) matters as
+  much as the retrieval algorithm.
+- Vector and hybrid returned the identical chunk set here; hybrid's only
+  effect was promoting chunk-6 to rank 1 via the rank swap (BM25 #1 +
+  vector #3 beats vector #2 + BM25 #2 by 0.00001).
+- BM25 still drags in an off-topic chunk (chunk-12), same weakness as
+  before: lexical match without semantic understanding.
